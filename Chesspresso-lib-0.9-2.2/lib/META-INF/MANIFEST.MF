@@ -1,0 +1,13 @@
+Manifest-Version: 1.0
+Ant-Version: Apache Ant 1.10.14
+Created-By: 21.0.1 (Homebrew)
+Built-By: Bernhard Seybold
+
+Name: chesspresso/
+Specification-Title: Chesspresso-lib
+Specification-Version: ${app.version}
+Specification-Vendor: Bernhard Seybold
+Implementation-Title: Chesspresso-lib
+Implementation-Version: ${app.version}  2024-01-16 18:29:27
+Implementation-Vendor: Bernhard Seybold
+
