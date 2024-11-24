@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import chesspresso.game.Game;
 import chesspresso.move.Move;
 import chesspresso.pgn.PGNReader;
@@ -36,7 +37,7 @@ public class StockfishProcess {
 	private final OutType outType;
 	private String white, whiteELO, black, blackELO;
 	private boolean DEBUG = false;
-	private static final ArrayList<String> linesQ = new ArrayList<String>();
+	private static final ConcurrentLinkedQueue<String> linesQ = new ConcurrentLinkedQueue<String>();
 	
 	public StockfishProcess(BufferedWriter writer, OutType outType) { 
 		this.writer = writer;
@@ -47,7 +48,6 @@ public class StockfishProcess {
 			final BufferedReader procin =  
 				new BufferedReader(new InputStreamReader(p.getInputStream()));
 			move("uci");
-			move("ucinewgame");
 			int cores = Runtime.getRuntime().availableProcessors();
 			if (cores > 1) {
 				move("setoption name Threads value 3"); // + Math.max(2,(cores/2)));
@@ -57,48 +57,24 @@ public class StockfishProcess {
 			new Thread(new Runnable() {
 				public void run() {
 					String line = null;
-					try {				
-						while ((line = procin.readLine(  )) != null) {
-							if (DEBUG) {
-								//System.out.println("RAW: " + line);
-							}
-							if (move == null) {
-								continue;
-							}
-							linesHistory(line);
-							if (line.contains("bestmove")) {
-								String bestmove = line.split(" ")[1];
-								/*
-								int idx = line.indexOf(' ',  8);
-								String bestmove = null;
-								if (idx > -1) {
-									bestmove = line.substring(9, idx);
-								}
-								else {
-									System.out.println("LINE -> " + line);
-									System.out.println("XBLANK: " + dumpBytes(line));
-								}
-								*/
-								moveSet.setBestMove(bestmove,move.isWhiteMove());
-								//moves.add(curMove);
-								//moveNum++;
-								//curMove = new MoveSet(moveNum);
-								synchronized(sfp) {
-									sfp.notifyAll();
-								}
-							}
-							else if (line.contains("multipv")) {
-								moveSet.addEval(line);
+					for (;;) {
+						try {				
+							while ((line = procin.readLine(  )) != null) {
+								linesQ.add(line);
 							}
 						}
-					}
-					catch (IOException ioex) { 
-						ioex.printStackTrace(); 
-					}	
-					catch (Exception ex) {
-						System.out.println("LINE: " + line);
-						ex.printStackTrace();
-					}				
+						catch (IOException ioex) { 
+							ioex.printStackTrace(); 
+						}	
+						catch (Exception ex) {
+							System.out.println("LINE: " + line);
+							ex.printStackTrace();
+						}
+						try { Thread.currentThread().wait(100); }
+						catch (InterruptedException iex) {
+							iex.printStackTrace();
+						}
+					}			
 				}
 			},"Stockfish in").start(); 
 		}
@@ -111,6 +87,59 @@ public class StockfishProcess {
 		procout.flush();
 	}
 	
+	private void newGame() {
+		move("ucinewgame");
+		sb.setLength(0);
+		sb.append("position startpos moves ");
+		moveSet = new MoveSet();
+	}
+	
+	private String getBestMove() {
+		//move("go movetime 5000"); // depth 10");
+		while (true) {
+			while(linesQ.size() > 0) {
+				String line = linesQ.poll();
+				if (line.contains("multipv")) {
+					if (DEBUG) {
+						System.out.println("MULTIPV: " + line);
+					}
+					moveSet.addEval(line);
+				}
+				else if (line.contains("bestmove")) {
+					if (DEBUG) {
+						System.out.println("BEST: " + line);
+					}
+					String bestmove = line.split(" ")[1];
+					moveSet.setBestMove(bestmove,move.isWhiteMove());
+					return bestmove;
+				}				
+			}
+			try {
+				Thread.sleep(500);
+			}
+			catch (InterruptedException iex) {
+			
+			}
+		}
+	}
+	
+	/*
+	 * This is to evaluate an unanalyzed move
+	 */
+	private String searchActualMove(String actualMove) {
+		moveSet.resetEvals();
+		if (DEBUG) {
+			moveSet.printContinuations();
+		}
+		move("go movetime 5000 search moves " + actualMove);
+		String bestMove = getBestMove();
+		if (DEBUG) {
+			moveSet.printContinuations();
+		}
+		moveSet.updateScores(0, actualMove, move.isWhiteMove());
+		return bestMove;
+	}
+	
 	public synchronized void evalPGN(String path) {
 		Path pgn = Paths.get(path);
 		try {
@@ -118,40 +147,40 @@ public class StockfishProcess {
 			PGNReader rdr = new PGNReader(is, "Chessalyzer");
 			Game game = rdr.parseGame();
 			while (game != null) {
-				sb.setLength(0);
-				sb.append("position startpos moves ");
+				newGame();
 				white = game.getWhite();
 				whiteELO = game.getWhiteEloStr();
 				black = game.getBlack();
 				blackELO = game.getBlackEloStr();
 				game.gotoStart();
+				move("go movetime 5000");
 				while (game.hasNextMove()) {
 					move = game.getNextMove();
 					moveNum = game.getCurrentMoveNumber();
-					game.goForward();
-					String moveText = stockfishify(move);
-					//moveSet.addMove(moveText,move.isWhiteMove());
-					/* If not a engine selected move
-					   ponder actual to get a score for it
-					   then continue
-					*/
-					if (!moveSet.addMove(moveText,move.isWhiteMove())) {
-						move("go ponder " + moveText);
-						try { wait(5000); }
-						catch (InterruptedException iex) {
-							iex.printStackTrace();
-						}
-						boolean checkNow = moveSet.addMove(moveText,move.isWhiteMove());
-						move("stop");
+					if (move.isWhiteMove()) {
+						System.out.println(moveNum + ". " + stockfishify(move));
 					}
- 					sb.append(moveText);
+					else {
+						System.out.println(moveNum + ".  ...   " + stockfishify(move));
+					}
+					if (DEBUG) {
+						System.out.println("getting best move - (game move: " + move.getSAN() + ")");
+					}
+					String bestmove = getBestMove();
+					if (DEBUG) {
+						System.out.println("got " + bestmove + "(game move: " + move.getSAN() + ")");
+					}
+					String moveText = stockfishify(move);
+					if (!moveSet.addMove(moveText,move.isWhiteMove())) {
+						bestmove = searchActualMove(sb.append(moveText).toString());
+						// Should fail but stats updated
+						//boolean checkNow = moveSet.addMove(moveText,move.isWhiteMove());
+					}
+ 					else sb.append(moveText);
 					move(sb.toString());
 					move("go movetime 5000"); // depth 10");
 					sb.append(" ");
-					try { wait(); }
-					catch (InterruptedException iex) {
-						iex.printStackTrace();
-					}
+					game.goForward();
 				}
 				if (writer != null) {
 					// Build white/black game output records
@@ -168,8 +197,8 @@ public class StockfishProcess {
 		catch (IOException ioex) {
 			ioex.printStackTrace();
 		}
-		catch (PGNSyntaxError pgnsex) {
-		
+		catch (PGNSyntaxError pgnex) {
+			pgnex.printStackTrace();
 		}
 	}
 	
@@ -224,19 +253,6 @@ public class StockfishProcess {
 			sb.append(toHexString(a[i]));
 		}
 		return new String(sb);
-	}
-	
-	private static void linesHistory(String line) {
-		linesQ.addFirst(line);
-		if (linesQ.size() > 10) {
-			linesQ.removeLast();
-		}
-	}
-	
-	public static void dumpLines() {
-		for (int i=0; i<linesQ.size(); i++) {
-			System.out.println("LINE> " +linesQ.get(i));
-		}
 	}
 	
 	private static String toHexString(byte b)

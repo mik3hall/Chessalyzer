@@ -24,11 +24,20 @@ public class MoveSet {
 	
 	public MoveSet() {
 		this.moveNum = moveNum;
-		continuations = new String[] {"1", "2", "3"};
+		continuations = new String[] { "X", "X", "X" };	
+	}
+	
+	/*
+	 * Reset evaluations if continuation not selected
+	 */
+	public void resetEvals() {
+		continuations[0] = "X";
+		continuations[1] = "X";
+		continuations[2] = "X";
 	}
 	
 	public void addEval(String line) {
-		int idx = line.indexOf("multipv ")+8;
+		//int idx = line.indexOf("multipv ")+8;
 		
 		try {
 			Pattern pattern = Pattern.compile(regex);
@@ -47,13 +56,17 @@ public class MoveSet {
 			StockfishProcess.sysout.println(line);
 			System.exit(0);
 		}
-		//for (int i=0; i<3; i++) {
-		//}
+		/*
+		for (int i=0; i<3; i++) {
+			System.out.println("AE " + continuations[i]);
+		}
+		*/
 	}
 	
 	public synchronized void setBestMove(String bestmove, boolean isWhite) {
-		if (!bestmove.equals(continuations[0])) {
-			StockfishProcess.dumpLines();
+		//throw new IllegalStateException("bestmove " + bestmove + " is white " + isWhite);
+		if (!continuations[0].equals("X") && !bestmove.equals(continuations[0])) {
+			//StockfishProcess.dumpLines();
 			throw new IllegalStateException("MISMATCH best move " + bestmove + " continuation " + continuations[0]);
 		}
 		this.bestmove = bestmove;
@@ -61,25 +74,16 @@ public class MoveSet {
 	
 	public synchronized boolean addMove(String move, boolean isWhite) {
 		int i = 0;
+		//System.out.println("addMove " + move);
 		for (; i<3; i++) {
 			if (continuations[i].equals(move)) {
 				if (isWhite) {
 					bestsWhite[i]++;
-					int gameScore = Integer.valueOf(centipawns[i]);
-					int moveScore = gameScore - lastMoveScore;
-					lastMoveScore = gameScore;
-					System.out.println("White move " + move + " score - Move: " + moveScore + " game score = " + gameScore);
-					//System.out.println("white score " + whiteScore);
 				}
 				else {
 					bestsBlack[i]++;
-					int gameScore = Integer.valueOf(centipawns[i]);
-					int moveScore = gameScore - lastMoveScore;
-					lastMoveScore = gameScore;
-					System.out.println("Black move " + move + " score - Move: " + moveScore + " game score = " + gameScore);
-					//System.out.println("black score " + blackScore);
 				}
-				//System.out.println("game score " + gameScore);
+				updateScores(i, move, isWhite);
 				return true;
 			}
 		}
@@ -94,8 +98,26 @@ public class MoveSet {
 		return false;	
 	}
 	
+	public void updateScores(int continuation, String move, boolean isWhite) {
+		int gameScore = Integer.valueOf(centipawns[continuation]);
+		int moveScore = gameScore - lastMoveScore;
+		lastMoveScore = gameScore;
+		if (isWhite) {
+			System.out.println("White move " + move + " score - Move: " + moveScore + " game score = " + gameScore);
+		}
+		else {
+			System.out.println("Black move " + move + " score - Move: " + moveScore + " game score = " + gameScore);
+		}
+	}
+	
 	public void setWhiteMove(boolean isWhite) {
 		this.isWhite = isWhite;
+	}
+	
+	public void printContinuations() {
+		System.out.println("1. " + continuations[0] + " " + centipawns[0]);
+		System.out.println("2. " + continuations[1] + " " + centipawns[1]);
+		System.out.println("3. " + continuations[2] + " " + centipawns[2]);		
 	}
 	
 	public void setBookMove(boolean bookMove) {

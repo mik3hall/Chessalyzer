@@ -47,6 +47,7 @@ public class GameRecord {
 
 	private static final String WHITE = "white,";
 	private static final String BLACK = "black,";
+	private static final String LS = System.getProperty("line.separator","\n");
 	private final StringBuilder record = new StringBuilder(); 
 	private final StringBuilder whiteData = new StringBuilder();
 	private final StringBuilder blackData = new StringBuilder();
@@ -107,12 +108,14 @@ public class GameRecord {
 	private String toStringWhite() {
 		record.insert(0,WHITE);
 		record.append(whiteData);
+		record.append(LS);
 		return record.toString();
 	}  
 	
 	public String toStringBlack() {
 		record.insert(0,BLACK);
 		record.append(blackData);
+		record.append(LS);
 		return record.toString();
 	}
 	
